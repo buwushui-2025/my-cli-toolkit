@@ -15,6 +15,8 @@ import re
 import shutil
 import string
 import sys
+import subprocess
+from datetime import datetime
 from pathlib import Path
 
 
@@ -22,7 +24,131 @@ from pathlib import Path
 # 配置
 # ──────────────────────────────────────────────
 TODO_FILE = Path(__file__).parent / "todo_data.json"
+CLIPBOARD_FILE = Path(__file__).parent / "clipboard_data.json"
 
+
+
+# ══════════════════════════════════════════════
+#  工具 4：剪贴板管理器
+# ══════════════════════════════════════════════
+
+def _get_clipboard():
+    try:
+        result = subprocess.run(
+            ["powershell", "-Command", "Get-Clipboard"],
+            capture_output=True, text=True, timeout=5
+        )
+        return result.stdout.rstrip("\n\r")
+    except Exception:
+        return ""
+
+
+def _set_clipboard(text: str):
+    import base64
+    try:
+        encoded = base64.b64encode(text.encode("utf-8")).decode()
+        cmd = ("[System.Text.Encoding]::UTF8.GetString("
+               "[System.Convert]::FromBase64String('" + encoded + "')) | Set-Clipboard")
+        subprocess.run(["powershell", "-Command", cmd], capture_output=True, timeout=5)
+    except Exception:
+        pass
+
+
+def load_clipboard_history():
+    if CLIPBOARD_FILE.exists():
+        try:
+            return json.loads(CLIPBOARD_FILE.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return []
+    return []
+
+
+def save_clipboard_history(history):
+    CLIPBOARD_FILE.write_text(
+        json.dumps(history, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+
+def clipboard_tool():
+    history = load_clipboard_history()
+
+    while True:
+        clear_screen()
+        print("\U0001f4cb  剪贴板管理器")
+        print("=" * 50)
+        if history:
+            print(f"共 {len(history)} 条记录:\n")
+            for entry in history[-20:]:
+                preview = entry["content"].replace("\n", "\\n")[:45]
+                preview += ("\u2026" if len(entry["content"]) > 45 else "")
+                print(f"  [{entry['id']:>3}] {entry['time']}  |  {preview}")
+        else:
+            print("\U0001f4ed 剪贴板历史为空。")
+        print()
+        print("[s] 保存当前剪贴板  [c] 复制回剪贴板  [x] 清空历史  [q] 返回")
+
+        choice = input("\n操作: ").strip().lower()
+
+        if choice == "q":
+            break
+
+        elif choice == "s":
+            content = _get_clipboard()
+            if not content:
+                print("\u26a0\ufe0f  剪贴板为空。")
+                input("\n按 Enter 继续...")
+                continue
+            if history and history[-1]["content"] == content:
+                print("\u2139\ufe0f  与上一条相同，已跳过。")
+                input("\n按 Enter 继续...")
+                continue
+            entry = {
+                "id": len(history) + 1,
+                "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "content": content,
+            }
+            history.append(entry)
+            save_clipboard_history(history)
+            preview = content[:50] + ("\u2026" if len(content) > 50 else "")
+            print(f"\u2705 已保存 [#{entry['id']}] {preview}")
+            input("\n按 Enter 继续...")
+
+        elif choice == "c":
+            if not history:
+                print("\U0001f4ed 没有历史记录。")
+                input("\n按 Enter 继续...")
+                continue
+            try:
+                idx = int(input("输入编号复制到剪贴板: ").strip())
+                for entry in history:
+                    if entry["id"] == idx:
+                        _set_clipboard(entry["content"])
+                        preview = entry["content"][:50] + ("\u2026" if len(entry["content"]) > 50 else "")
+                        print(f"\u2705 已复制: {preview}")
+                        break
+                else:
+                    print("\u26a0\ufe0f  未找到该编号。")
+            except ValueError:
+                print("\u26a0\ufe0f  请输入有效数字。")
+            input("\n按 Enter 继续...")
+
+        elif choice == "x":
+            if not history:
+                print("\U0001f4ed 历史已经是空的。")
+                input("\n按 Enter 继续...")
+                continue
+            confirm = input("确认清空全部历史？(y/N): ").strip().lower()
+            if confirm == "y":
+                history.clear()
+                save_clipboard_history(history)
+                print("\u2705 历史已清空。")
+            else:
+                print("\U0001f6ab 已取消。")
+            input("\n按 Enter 继续...")
+
+        else:
+            print("\u26a0\ufe0f  无效操作。")
+            input("\n按 Enter 继续...")
 
 # ══════════════════════════════════════════════
 #  主入口 & 菜单
@@ -32,6 +158,7 @@ MENU_ITEMS = [
     ("1", "待办清单",     "管理待办事项：添加、查看、完成、删除"),
     ("2", "密码生成器",   "生成随机强密码，可自定义长度与字符集"),
     ("3", "文件重命名",   "批量重命名文件（按模式匹配替换）"),
+    ("4", "剪贴板管理器", "保存/查看/回拷剪贴板历史"),
     ("0", "退出",         "退出程序"),
 ]
 
@@ -57,6 +184,7 @@ def main():
         "1": todo_tool,
         "2": password_tool,
         "3": rename_tool,
+        "4": clipboard_tool,
     }
 
     while True:
@@ -393,6 +521,129 @@ def rename_tool():
 
         input("\n按 Enter 继续...")
 
+
+
+# ══════════════════════════════════════════════
+#  工具 4：剪贴板管理器
+# ══════════════════════════════════════════════
+
+def _get_clipboard():
+    try:
+        result = subprocess.run(
+            ["powershell", "-Command", "Get-Clipboard"],
+            capture_output=True, text=True, timeout=5
+        )
+        return result.stdout.rstrip("\n\r")
+    except Exception:
+        return ""
+
+
+def _set_clipboard(text: str):
+    import base64
+    try:
+        encoded = base64.b64encode(text.encode("utf-8")).decode()
+        cmd = ("[System.Text.Encoding]::UTF8.GetString("
+               "[System.Convert]::FromBase64String('" + encoded + "')) | Set-Clipboard")
+        subprocess.run(["powershell", "-Command", cmd], capture_output=True, timeout=5)
+    except Exception:
+        pass
+
+
+def load_clipboard_history():
+    if CLIPBOARD_FILE.exists():
+        try:
+            return json.loads(CLIPBOARD_FILE.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return []
+    return []
+
+
+def save_clipboard_history(history):
+    CLIPBOARD_FILE.write_text(
+        json.dumps(history, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+
+def clipboard_tool():
+    history = load_clipboard_history()
+
+    while True:
+        clear_screen()
+        print("\U0001f4cb  剪贴板管理器")
+        print("=" * 50)
+        if history:
+            print(f"共 {len(history)} 条记录:\n")
+            for entry in history[-20:]:
+                preview = entry["content"].replace("\n", "\\n")[:45]
+                preview += ("\u2026" if len(entry["content"]) > 45 else "")
+                print(f"  [{entry['id']:>3}] {entry['time']}  |  {preview}")
+        else:
+            print("\U0001f4ed 剪贴板历史为空。")
+        print()
+        print("[s] 保存当前剪贴板  [c] 复制回剪贴板  [x] 清空历史  [q] 返回")
+
+        choice = input("\n操作: ").strip().lower()
+
+        if choice == "q":
+            break
+
+        elif choice == "s":
+            content = _get_clipboard()
+            if not content:
+                print("\u26a0\ufe0f  剪贴板为空。")
+                input("\n按 Enter 继续...")
+                continue
+            if history and history[-1]["content"] == content:
+                print("\u2139\ufe0f  与上一条相同，已跳过。")
+                input("\n按 Enter 继续...")
+                continue
+            entry = {
+                "id": len(history) + 1,
+                "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "content": content,
+            }
+            history.append(entry)
+            save_clipboard_history(history)
+            preview = content[:50] + ("\u2026" if len(content) > 50 else "")
+            print(f"\u2705 已保存 [#{entry['id']}] {preview}")
+            input("\n按 Enter 继续...")
+
+        elif choice == "c":
+            if not history:
+                print("\U0001f4ed 没有历史记录。")
+                input("\n按 Enter 继续...")
+                continue
+            try:
+                idx = int(input("输入编号复制到剪贴板: ").strip())
+                for entry in history:
+                    if entry["id"] == idx:
+                        _set_clipboard(entry["content"])
+                        preview = entry["content"][:50] + ("\u2026" if len(entry["content"]) > 50 else "")
+                        print(f"\u2705 已复制: {preview}")
+                        break
+                else:
+                    print("\u26a0\ufe0f  未找到该编号。")
+            except ValueError:
+                print("\u26a0\ufe0f  请输入有效数字。")
+            input("\n按 Enter 继续...")
+
+        elif choice == "x":
+            if not history:
+                print("\U0001f4ed 历史已经是空的。")
+                input("\n按 Enter 继续...")
+                continue
+            confirm = input("确认清空全部历史？(y/N): ").strip().lower()
+            if confirm == "y":
+                history.clear()
+                save_clipboard_history(history)
+                print("\u2705 历史已清空。")
+            else:
+                print("\U0001f6ab 已取消。")
+            input("\n按 Enter 继续...")
+
+        else:
+            print("\u26a0\ufe0f  无效操作。")
+            input("\n按 Enter 继续...")
 
 # ══════════════════════════════════════════════
 #  入口
